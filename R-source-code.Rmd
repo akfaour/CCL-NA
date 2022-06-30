@@ -1,11 +1,10 @@
 ---
-title: 'R source code for the paper titled: Late Outcomes of Patients with Prehospital ST-segment Elevation and Appropriate Cardiac Catheterisation Laboratory Nonactivation'
+title: 'R source code for the article Late Outcomes of Patients with Prehospital ST-segment Elevation and Appropriate Cardiac Catheterisation Laboratory Nonactivation (http://doi.org/10.1161/JAHA.121.025602)'
 author: 'Amir Faour, BSc MBBS FRACP FCSANZ'
 date: 2022-06-29
 ---
-```{r Setup, include=FALSE}
+```{r Setup}
 #Options
-knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, results = 'hide')
 options(scipen = 999)
 
 # Packages
@@ -46,12 +45,12 @@ library(ggfittext)
 source("extras/functions.R")
 
 # Table Themes 
-## gtsummary
+# gtsummary
 reset_gtsummary_theme()
 theme_gtsummary_journal(journal = "jama", set_theme = TRUE)
 theme_gtsummary_compact(set_theme = TRUE)
 
-## My Theme
+# My Theme
 AF.GTsummary <-   
   list(
     "tbl_summary-str:categorical_stat" = "{n} ({p})",
@@ -60,14 +59,18 @@ AF.GTsummary <-
   )
 set_gtsummary_theme(AF.GTsummary)
 
-```
+# Load master dataframe 
+setwd('~/Dropbox/R/projects/transmission2')
+Raw.DF <- read.csv("data/2022-1-30-transmission-v2-csv.csv", header=TRUE,strip.white=TRUE, blank.lines.skip=TRUE)
+AllTransmissions.DF <- Raw.DF[1:1708, ]
 
-```{r House-Keeping, include=FALSE}
-# Create flow chart vector
+# Scrubbing and checking steps omitted
+
+# Create vector for Figure 1
 Flow.Chart.Vector <- c(AllTransmissions.Count, IncludedTransmissions2.Count, MissingInfo.Count, Serial.Count, UGANeg.Count, LBBB.Paced.Count, NoTnT.Count, No2ndTnTnotMI.Count, MI.Count, AI.Count, CI.Count, NI.Count, STEMI.Count, NSTEMI.Count, ExcludedTransmissions2.Count, Not_MI.Count, Fibrinolysis.Count, Lab.Activated.Count, Lab.Not.Activated.Count, Lab.Activated.MI.Count, Lab.Activated.AI.Count, Lab.Activated.CI.Count, Lab.Activated.NI.Count, Lab.Not.Activated.MI.Count, Lab.Not.Activated.AI.Count, Lab.Not.Activated.CI.Count, Lab.Not.Activated.NI.Count, Lab.Activated.MI.STEMI.Count, Lab.Activated.MI.NSTEMI.Count, Lab.Not.Activated.MI.STEMI.Count, Lab.Not.Activated.MI.NSTEMI.Count, MultipleEncounters.Count)
 ```
 
-```{r KM, include=FALSE}
+```{r KM}
 # Create survival fit by Lab_Activation
 KM_fit_Lab_Activation <- survfit(Surv(FUTorDeath_Years, Status.Death) ~ CCL_Activated, data = IncludedTransmissions2.DF)
 KM_fit_Lab_Activation
@@ -79,7 +82,7 @@ Log_Rank_KM_fit_Lab_Activation <- survdiff(Surv(FUTorDeath_Years, Status.Death) 
 Log_Rank_KM_fit_Lab_Activation
 ```
 
-```{r RR-Unadjusted, include=FALSE}
+```{r RR-Unadjusted}
 rr.Death <- riskratio(sum(Lab.Not.Activated.DF$X2_Year_DeathBinary), sum(Lab.Activated.DF$X2_Year_DeathBinary), Lab.Not.Activated.Count, Lab.Activated.Count, conf.level=0.95, p.calc.by.independence=TRUE)
 RR.Death <- rr.fx(rr.Death, "All-cause death")
 
@@ -105,7 +108,7 @@ UA.RR.DF <- rbind(RR.Death, RR.MACE, RR.CVDeath, RR.SMI, RR.Stroke, RR.NCVDeath,
 UA.RR.DF
 ```
 
-```{r RR-Adjusted, include=FALSE}
+```{r RR-Adjusted}
 # Change CCL_Activated2 to numeric for RR analysis
 IncludedTransmissions2.DF$CCL_Activated2 <- as.numeric.factor(IncludedTransmissions2.DF$CCL_Activated2)
 
@@ -132,7 +135,7 @@ A.RR.CCL.HF <- glm(CCL_Activated2 ~ X2_Year_HospHFNumeric + Age + FemaleGender +
 A.RR.CCL.Stroke <- glm(CCL_Activated2 ~ X2_Year_StrokeNumeric + Age + FemaleGender + Any_DM + Previous_MI + Stroke + Pre_Cath_Arrest + BBB + M_Injury, data = IncludedTransmissions2.DF, family=poisson(link=log))
 ```
 
-```{r Cox, include=FALSE}
+```{r Cox}
 # Mortality
 
 # Check for non-linearity for continuous covariates using Martingale residuals
@@ -197,11 +200,11 @@ cox_NCVD_CCL <- coxph(Surv(FUTorComp_Months, Status.NCVDeath) ~ CCL2 + pspline(A
 summary(cox_NCVD_CCL)
 cox_NCVD_CCL_assumptions <- cox.zph(cox_NCVD_CCL)
 cox_NCVD_CCL_assumptions
-
 ```
 
-```{r Cox-CCL-Nonactivation, include=FALSE}
-### Adjusted HR for All-cause death in CCL cancellation alone
+```{r Cox-CCL-Nonactivation}
+
+# Adjusted HR for All-cause death in CCL cancellation alone
 cox_Death_CCL_cancellation_alone <- coxph(Surv(FUTorDeath_Months, Status.Death) ~  pspline(Age) + FemaleGender + Any_DM + Previous_MI + Stroke + strata(Pre_Cath_Arrest) + BBB + MI_Injury, data=Lab.Not.Activated.DF)
 summary(cox_Death_CCL_cancellation_alone)
 cox_Death_CCL_cancellation_alone_assumptions <- cox.zph(cox_Death_CCL_cancellation_alone)
@@ -218,12 +221,13 @@ cox_NCVD_CCL_cancellation_alone <- coxph(Surv(FUTorComp_Months, Status.NCVDeath)
 summary(cox_NCVD_CCL_cancellation_alone)
 cox_NCVD_CCL_cancellation_alone_assumptions <- cox.zph(cox_NCVD_CCL_cancellation_alone)
 cox_NCVD_CCL_cancellation_alone_assumptions
-#ggcoxzph(cox_NCVD_CCL_cancellation_alone_assumptions)
+
 ```
 
 # Tables
+
 **Table 1. Baseline Characteristics Stratified by Cardiac Catheterisation Laboratory Activation**
-```{r Table1, include=FALSE}
+```{r Table1}
 # GTsummary
 reset_gtsummary_theme()
 theme_gtsummary_compact(set_theme = TRUE)
@@ -328,14 +332,11 @@ Table1.TB <- Table1.TB %>%
 Table1.TB %>% 
   gtsave("transmission2_table1.html", path = "tables")
 
-#Table1.TB <- Table1.TB %>%
-  #as_latex()
-
 Table1.TB
 ```
 
 **Table 2. Clinical Outcomes at Two Years stratified by Cardiac Catheterisation Laboratory Nonactivation Versus Activation**
-```{r Table2, include=FALSE}
+```{r Table2}
 # Clinical outcome tables at 2 years
 reset_gtsummary_theme()
 theme_gtsummary_compact()
@@ -479,7 +480,7 @@ CO.RR.CCL.TB
 ```
 
 **Table 3. Hazard Ratio for All-Cause Death and Cause-Specific Hazard Ratios for the Composite Outcome of Cardiovascular Death/Myocardial Infarction/Stroke and Noncardiovascular Death in Patients with Cardiac Catheterisation Laboratory Nonactivation Versus Activation in Unadjusted and Adjusted Cox-Regression Models**
-```{r Table3, include=FALSE}
+```{r Table3}
 # Death
 Table3.1.TB <- tbl_regression(cox_Death_CCL_M1, exponentiate = TRUE, pvalue_fun = ~style_pvalue(.x, digits = 2), include = "CCL2", show_single_row = "CCL2") %>%
   modify_header(label ~ "**Variable**")%>%
@@ -658,7 +659,7 @@ Table3.TB
 ```
 
 **Table 4. Hazard Ratio for All-Cause Death and Cause-Specific Hazard Ratios for the Composite Outcome of Cardiovascular Death/Myocardial Infarction/Stroke and Noncardiovascular Death in Patients with Cardiac Catheterisation Laboratory Nonactivation Alone in Adjusted Cox-Regression Models**
-```{r Table4, include=FALSE}
+```{r Table4}
 ## Set theme
 reset_gtsummary_theme()
 theme_gtsummary_journal(journal = "jama", set_theme = TRUE)
@@ -783,23 +784,18 @@ Table4.TB <- Table4.TB %>%
 Table4.TB %>% 
   gtsave("transmission2_table4.html", path = "tables")
 
-#Table4.TB <- Table4.TB %>%
-  #as_latex()
-
 Table4.TB
 ```
 
 # Figures
 
-## Figure 1
-```{r fig1-code, include='false'}
+```{r fig1-code}
 Excluded.Paste <- paste0('Excluded (n=', Flow.Chart.Vector[15], '):')
 Serial.Paste <- paste0('- Serial/duplicate ECGs ', '(n=', Flow.Chart.Vector[4], ')')
 Missing.Paste <- paste0('- Missing data ', '(n=', Flow.Chart.Vector[3], ')')
 No.Troponin.Paste <- paste0('- Troponin not tested ', '(n=', Flow.Chart.Vector[7], ')')
 Indeterminate.Paste <- paste0('- Indeterminate myocardial injury pattern ', '(n=', Flow.Chart.Vector[8], ')')
 Multiple.Paste <- paste0('- Multiple patient encounters (only the first was included) ', '(n=', Flow.Chart.Vector[32], ')')
-#Fibrinolytics.Paste <- paste0('- Received fibrinolytic therapy ', '(n=', Flow.Chart.Vector[17], ')')
 
 MI1.Paste <- paste0('- MI ', '(n=', Flow.Chart.Vector[20], ')')
 STEMI1.Paste <- paste0('∙ STEMI ', '(n=', Flow.Chart.Vector[28], ')')
@@ -867,69 +863,15 @@ e -> g
 [23]: paste0(Multiple.Paste)
 ")
 
-# [24]: paste0(Fibrinolytics.Paste)
-
-# Vector details:
-#1. AllTransmissions.Count
-#2. IncludedTransmissions2.Count
-#3. MissingInfo.Count
-#4. Serial.Count
-#5. UGANeg.Count
-#6. LBBB.Paced.Count
-#7. NoTnT.Count
-#8. No2ndTnTnotMI.Count
-#9. MI.Count
-#10. AI.Count
-#11. CI.Count
-#12. NI.Count
-#13. STEMI.Count
-#14. NSTEMI.Count
-#15. ExcludedTransmissions2.Count
-#16. Not_MI.Count
-#17. Fibrinolysis.Count
-#18. Lab.Activated.Count
-#19. Lab.Not.Activated.Count
-#20. Lab.Activated.MI.Count
-#21. Lab.Activated.AI.Count
-#22. Lab.Activated.CI.Count
-#23. Lab.Activated.NI.Count
-#24. Lab.Not.Activated.MI.Count
-#25. Lab.Not.Activated.AI.Count
-#26. Lab.Not.Activated.CI.Count
-#27. Lab.Not.Activated.NI.Count
-#28. Lab.Activated.MI.STEMI.Count
-#29. Lab.Activated.MI.NSTEMI.Count
-#30. Lab.Not.Activated.MI.STEMI.Count
-#31. Lab.Not.Activated.MI.NSTEMI.Count
-#32. MultipleEncounters.Count
-
-# Save tiff and png then print
-#Diag_DPI = 1200
-#Diag_width = 8
-#Diag_height = 6
-
-#Figure1.FG %>%
-    #export_svg() %>%
-    #charToRaw %>%
-    #rsvg(width = Diag_width*(Diag_DPI/2.54), height = Diag_height*(Diag_DPI/2.54)) %>%
-    #tiff::writeTIFF("figures/transmission2-fig1.tiff")
-
-#Figure1.FG %>%
-  #export_svg() %>%
-  #charToRaw %>%
-  #rsvg_png(file = "Figures/Transmission2_Figure1.png", width = Diag_width*(Diag_DPI/2.54), height = Diag_height*(Diag_DPI/2.54))
-
 Figure1.FG
 ```
 
-```{r fig1, include=TRUE, results='markup', fig.align='left', fig.width=8, fig.height=6, fig.cap="**Study flow diagram with identification of the study population by classification according to cardiac catheterisation laboratory activation and the 4th Universal Definition of Myocardial Infarction.** Three patients with CCL activation expired before emergency coronary angiography. Missing data was due to insufficient identifying patient information on the transmitted ECG to link to a particular patient and/or procedure. CCL indicates cardiac catheterisation laboratory; ECG, electrocardiogram; ED, emergency department; STEMI, ST-segment elevation myocardial infarction."}
+```{r fig1, results='markup', fig.align='left', fig.width=8, fig.height=6, fig.cap="**Study flow diagram with identification of the study population by classification according to cardiac catheterisation laboratory activation and the 4th Universal Definition of Myocardial Infarction.** Three patients with CCL activation expired before emergency coronary angiography. Missing data was due to insufficient identifying patient information on the transmitted ECG to link to a particular patient and/or procedure. CCL indicates cardiac catheterisation laboratory; ECG, electrocardiogram; ED, emergency department; STEMI, ST-segment elevation myocardial infarction."}
 #knitr::include_graphics("figures/transmission2_fig1.png")
 Figure1.FG
 ```
 
-## Figure 2
-
-```{r fig2, include=TRUE, fig.align='left', fig.width=8, fig.height=6, fig.cap="**Kaplan-Meier curves illustrating the risk of death from any cause through to two years stratified by cardiac catheterisation laboratory activation versus nonactivation, with table of number at risk.** Comparison of groups was obtained using the log-rank test. CCL indicates cardiac catheterisation laboratory; MI, myocardial infarction."}
+```{r fig2, fig.align='left', fig.width=8, fig.height=6, fig.cap="**Kaplan-Meier curves illustrating the risk of death from any cause through to two years stratified by cardiac catheterisation laboratory activation versus nonactivation, with table of number at risk.** Comparison of groups was obtained using the log-rank test. CCL indicates cardiac catheterisation laboratory; MI, myocardial infarction."}
 
 ## All patients stratified by CCL status
 KM.FG <- ggsurvplot(KM_fit_Lab_Activation, data=IncludedTransmissions2.DF,
@@ -971,9 +913,7 @@ dev.off()
 KM.FG
 ```
 
-## Figure 3
-
-```{r fig3, include=TRUE, fig.align='left', fig.width=10, fig.height=6, fig.cap="**Alluvial plot illustrating the frequency of cause of death at two years grouped by cardiac catheterisation laboratory activation and adjudicated index diagnosis.** CCL activation (blue) and CCL nonactivation (red). The width of the band indicates the relative size of the population. CCL indicates cardiac catheterisation laboratory."}
+```{r fig3, fig.align='left', fig.width=10, fig.height=6, fig.cap="**Alluvial plot illustrating the frequency of cause of death at two years grouped by cardiac catheterisation laboratory activation and adjudicated index diagnosis.** CCL activation (blue) and CCL nonactivation (red). The width of the band indicates the relative size of the population. CCL indicates cardiac catheterisation laboratory."}
 
 # Create X2_Year_Death_Categorical
 IncludedTransmissions2.DF <- mutate(IncludedTransmissions2.DF, X2_Year_Death_Categorical = ifelse(X2_Year_Death==1, "Cardiovascular Death", ifelse(X2_Year_Death==2, "Noncardiovascular Death", ifelse(X2_Year_Death==3, "Cardiovascular Death", NA))))
@@ -1057,9 +997,7 @@ dev.off()
 Alluvial.FG 
 ```
 
-## Figure 4
-
-```{r fig4, include=TRUE, fig.align='left', fig.width=10, fig.height=6, fig.cap="**Cumulative incidence curves illustrating risk of the composite outcome of cardiovascular death/myocardial infarction/stroke and competing risk of noncardiovascular death through to two years in patients with cardiac catheterisation laboratory activation versus nonactivation.** <sup>*</sup>Comparison of groups was obtained using Gray's test. CCL indicates cardiac catheterisation laboratory."}
+```{r fig4, fig.align='left', fig.width=10, fig.height=6, fig.cap="**Cumulative incidence curves illustrating risk of the composite outcome of cardiovascular death/myocardial infarction/stroke and competing risk of noncardiovascular death through to two years in patients with cardiac catheterisation laboratory activation versus nonactivation.** <sup>*</sup>Comparison of groups was obtained using Gray's test. CCL indicates cardiac catheterisation laboratory."}
 
 IncludedTransmissions3.DF <- IncludedTransmissions2.DF
 IncludedTransmissions3.DF <- IncludedTransmissions3.DF %>%
