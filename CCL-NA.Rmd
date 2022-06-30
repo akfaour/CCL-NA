@@ -1,0 +1,1139 @@
+---
+title: 'R source code for the paper titled: Late Outcomes of Patients with Prehospital ST-segment Elevation and Appropriate Cardiac Catheterisation Laboratory Nonactivation'
+author: 'Amir Faour, BSc MBBS FRACP FCSANZ'
+date: 2022-06-29
+---
+```{r Setup, include=FALSE}
+#Options
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, results = 'hide')
+options(scipen = 999)
+
+# Packages
+library(tidyverse)
+library(gt)
+library(gtsummary)
+library(ggsignif)
+library(DiagrammeR)
+library(DiagrammeRsvg) 
+library(rsvg)
+library(png)
+library(grid)
+library(gridExtra)
+library(survival)
+library(rms)
+library(survminer)
+library(magrittr)
+library(lubridate)
+library(hms)
+library(gmodels)
+library(pspline)
+library(sandwich)
+library(cmprsk)
+library(timereg)
+library(ggplot2)
+library(ggpubr)
+library(ggsci)
+library(glue)
+library(svglite)
+library(tiff)
+library(fmsb)
+library(emojifont)
+library(RColorBrewer)
+library(ggalluvial)
+library(ggfittext)
+
+# Functions
+source("extras/functions.R")
+
+# Table Themes 
+## gtsummary
+reset_gtsummary_theme()
+theme_gtsummary_journal(journal = "jama", set_theme = TRUE)
+theme_gtsummary_compact(set_theme = TRUE)
+
+## My Theme
+AF.GTsummary <-   
+  list(
+    "tbl_summary-str:categorical_stat" = "{n} ({p})",
+    "tbl_summary-str:continuous_stat" = "{median} ({p25}-{p75})",
+    "pkgwide-str:theme_name" = "AF's GTsummary theme"
+  )
+set_gtsummary_theme(AF.GTsummary)
+
+```
+
+```{r House-Keeping, include=FALSE}
+# Create flow chart vector
+Flow.Chart.Vector <- c(AllTransmissions.Count, IncludedTransmissions2.Count, MissingInfo.Count, Serial.Count, UGANeg.Count, LBBB.Paced.Count, NoTnT.Count, No2ndTnTnotMI.Count, MI.Count, AI.Count, CI.Count, NI.Count, STEMI.Count, NSTEMI.Count, ExcludedTransmissions2.Count, Not_MI.Count, Fibrinolysis.Count, Lab.Activated.Count, Lab.Not.Activated.Count, Lab.Activated.MI.Count, Lab.Activated.AI.Count, Lab.Activated.CI.Count, Lab.Activated.NI.Count, Lab.Not.Activated.MI.Count, Lab.Not.Activated.AI.Count, Lab.Not.Activated.CI.Count, Lab.Not.Activated.NI.Count, Lab.Activated.MI.STEMI.Count, Lab.Activated.MI.NSTEMI.Count, Lab.Not.Activated.MI.STEMI.Count, Lab.Not.Activated.MI.NSTEMI.Count, MultipleEncounters.Count)
+```
+
+```{r KM, include=FALSE}
+# Create survival fit by Lab_Activation
+KM_fit_Lab_Activation <- survfit(Surv(FUTorDeath_Years, Status.Death) ~ CCL_Activated, data = IncludedTransmissions2.DF)
+KM_fit_Lab_Activation
+summary(KM_fit_Lab_Activation, p = TRUE) 
+summary(KM_fit_Lab_Activation, times = c(1,2), p = TRUE) 
+
+# Log-Rank test for significance
+Log_Rank_KM_fit_Lab_Activation <- survdiff(Surv(FUTorDeath_Years, Status.Death) ~ CCL_Activated, data = IncludedTransmissions2.DF)
+Log_Rank_KM_fit_Lab_Activation
+```
+
+```{r RR-Unadjusted, include=FALSE}
+rr.Death <- riskratio(sum(Lab.Not.Activated.DF$X2_Year_DeathBinary), sum(Lab.Activated.DF$X2_Year_DeathBinary), Lab.Not.Activated.Count, Lab.Activated.Count, conf.level=0.95, p.calc.by.independence=TRUE)
+RR.Death <- rr.fx(rr.Death, "All-cause death")
+
+rr.CVDeath <- riskratio(sum(Lab.Not.Activated.DF$X2_Year_CVDeathNumeric), sum(Lab.Activated.DF$X2_Year_CVDeathNumeric), Lab.Not.Activated.Count, Lab.Activated.Count, conf.level=0.95, p.calc.by.independence=TRUE)
+RR.CVDeath <- rr.fx(rr.CVDeath, "Cardiovascular death")
+
+rr.NCVDeath <- riskratio(sum(Lab.Not.Activated.DF$X2_Year_NCVDeathNumeric), sum(Lab.Activated.DF$X2_Year_NCVDeathNumeric), Lab.Not.Activated.Count, Lab.Activated.Count, conf.level=0.95, p.calc.by.independence=TRUE)
+RR.NCVDeath <- rr.fx(rr.NCVDeath, "Noncardiovascular death")
+
+rr.MACE <- riskratio(sum(Lab.Not.Activated.DF$X2_Year_Composite2Numeric), sum(Lab.Activated.DF$X2_Year_Composite2Numeric), Lab.Not.Activated.Count, Lab.Activated.Count, conf.level=0.95, p.calc.by.independence=TRUE)
+RR.MACE <- rr.fx(rr.MACE, "Cardiovascular death/MI/Stroke")
+
+rr.SMI <- riskratio(sum(Lab.Not.Activated.DF$X2_Year_ReMINumeric), sum(Lab.Activated.DF$X2_Year_ReMINumeric), Lab.Not.Activated.Count, Lab.Activated.Count, conf.level=0.95, p.calc.by.independence=TRUE)
+RR.SMI <- rr.fx(rr.SMI, "MI")
+
+rr.HF <- riskratio(sum(Lab.Not.Activated.DF$X2_Year_HospHFNumeric), sum(Lab.Activated.DF$X2_Year_HospHFNumeric), Lab.Not.Activated.Count, Lab.Activated.Count, conf.level=0.95, p.calc.by.independence=TRUE)
+RR.HF <- rr.fx(rr.HF, "Heart failure hospitalisation")
+
+rr.Stroke <- riskratio(sum(Lab.Not.Activated.DF$X2_Year_StrokeNumeric), sum(Lab.Activated.DF$X2_Year_StrokeNumeric), Lab.Not.Activated.Count, Lab.Activated.Count, conf.level=0.95, p.calc.by.independence=TRUE)
+RR.Stroke <- rr.fx(rr.Stroke, "Stroke")
+
+UA.RR.DF <- rbind(RR.Death, RR.MACE, RR.CVDeath, RR.SMI, RR.Stroke, RR.NCVDeath, RR.HF)
+UA.RR.DF
+```
+
+```{r RR-Adjusted, include=FALSE}
+# Change CCL_Activated2 to numeric for RR analysis
+IncludedTransmissions2.DF$CCL_Activated2 <- as.numeric.factor(IncludedTransmissions2.DF$CCL_Activated2)
+
+# RR adjusted 
+# Death adjusted for age, sex, and co-morbidities
+A.RR.CCL.Death <- glm(CCL_Activated2 ~ X2_Year_DeathBinary + Age + FemaleGender + Any_DM + Previous_MI + Stroke + Pre_Cath_Arrest + BBB + M_Injury, data=IncludedTransmissions2.DF, family=poisson(link=log))
+
+# CVDeath adjusted for age, sex, co-morbidities
+A.RR.CCL.CVDeath <- glm(CCL_Activated2 ~ X2_Year_CVDeathNumeric + Age + FemaleGender + Any_DM + Previous_MI + Stroke + Pre_Cath_Arrest + BBB + M_Injury, data=IncludedTransmissions2.DF, family=poisson(link=log))
+
+# NCVDeath adjusted for age, sex, and co-morbidities
+A.RR.CCL.NCVDeath <- glm(CCL_Activated2 ~ X2_Year_NCVDeathNumeric + Age + FemaleGender + Any_DM + Previous_MI + Stroke + Pre_Cath_Arrest + BBB + M_Injury, data=IncludedTransmissions2.DF, family=poisson(link=log))
+
+# MACE adjusted for age, sex, and co-morbidities
+A.RR.CCL.Comp <- glm(CCL_Activated2  ~ X2_Year_Composite2Numeric + Age + FemaleGender + Any_DM + Previous_MI + Stroke + Pre_Cath_Arrest + BBB + M_Injury, data = IncludedTransmissions2.DF, family=poisson(link=log))
+
+# Subsequent MI adjusted for age, sex, and co-morbidities
+A.RR.CCL.SMI <- glm(CCL_Activated2 ~ X2_Year_ReMINumeric + Age + FemaleGender + Any_DM + Previous_MI + Stroke + Pre_Cath_Arrest + BBB + M_Injury, data = IncludedTransmissions2.DF, family=poisson(link=log))
+
+# HF adjusted for age, sex, and co-morbidities
+A.RR.CCL.HF <- glm(CCL_Activated2 ~ X2_Year_HospHFNumeric + Age + FemaleGender + Any_DM + Previous_MI + Stroke + Pre_Cath_Arrest + BBB + M_Injury, data = IncludedTransmissions2.DF, family=poisson(link=log))
+
+# Stroke adjusted for age, sex, and co-morbidities
+A.RR.CCL.Stroke <- glm(CCL_Activated2 ~ X2_Year_StrokeNumeric + Age + FemaleGender + Any_DM + Previous_MI + Stroke + Pre_Cath_Arrest + BBB + M_Injury, data = IncludedTransmissions2.DF, family=poisson(link=log))
+```
+
+```{r Cox, include=FALSE}
+# Mortality
+
+# Check for non-linearity for continuous covariates using Martingale residuals
+cox_mort_age <- coxph(Surv(FUTorDeath_Years, Status.Death) ~ Age + log(Age) + sqrt(Age), data=IncludedTransmissions2.DF)
+plot(predict(cox_mort_age), residuals(cox_mort_age, type="martingale"), xlab="Fitted values", ylab="Martingale residuals", main="Residual plot", las=1)
+# add a line for y=residual=0
+abline(h=0)
+# fit a smoother curve through the points
+lines(smooth.spline(predict(cox_mort_age), residuals(cox_mort_age, type="martingale")), col="red")
+# or using ggcoxfunctional
+ggcoxfunctional(cox_mort_age, data=IncludedTransmissions2.DF, ox.scale = "linear.predictions")
+# Age is non-linear therefore will use psplines in full model 
+
+# Unadjusted M1: All-cause death 
+cox_Death_CCL_M1 <- coxph(Surv(FUTorDeath_Months, Status.Death) ~ CCL2, data=IncludedTransmissions2.DF)
+summary(cox_Death_CCL_M1)
+cox_Death_CCL_M1_assumptions <- cox.zph(cox_Death_CCL_M1)
+cox_Death_CCL_M1_assumptions
+
+# Adjusted M2: All-cause death + age + sex
+cox_Death_CCL_M2 <- coxph(Surv(FUTorDeath_Months, Status.Death) ~ CCL2 + pspline(Age) + FemaleGender, data=IncludedTransmissions2.DF)
+summary(cox_Death_CCL_M2)
+cox_Death_CCL_M2_assumptions <- cox.zph(cox_Death_CCL_M2)
+cox_Death_CCL_M2_assumptions
+
+# Final model: All-cause death fully adjusted
+cox_Death_CCL <- coxph(Surv(FUTorDeath_Months, Status.Death) ~ CCL2 + pspline(Age) + FemaleGender + Any_DM + strata(Previous_MI) + strata(Stroke) + strata(Pre_Cath_Arrest) + BBB + strata(M_Injury), data=IncludedTransmissions2.DF)
+summary(cox_Death_CCL)
+cox_Death_CCL_assumptions <- cox.zph(cox_Death_CCL)
+cox_Death_CCL_assumptions
+
+# Unadjusted M1: csHR for MACE
+cox_MACE_CCL_M1 <- coxph(Surv(FUTorComp_Months, Status.Comp2) ~ CCL2, data=IncludedTransmissions2.DF)
+summary(cox_MACE_CCL_M1)
+
+# Adjusted M2: csHR for MACE + Age + Sex
+cox_MACE_CCL_M2 <- coxph(Surv(FUTorComp_Months, Status.Comp2) ~ CCL2 + pspline(Age) + FemaleGender, data=IncludedTransmissions2.DF)
+summary(cox_MACE_CCL_M2)
+cox_MACE_CCL_M2_assumptions <- cox.zph(cox_MACE_CCL_M2)
+cox_MACE_CCL_M2_assumptions
+
+# Final model: csHR for MACE fully adjusted
+cox_MACE_CCL <- coxph(Surv(FUTorComp_Months, Status.Comp2) ~ CCL2 + pspline(Age) + FemaleGender + Any_DM + strata(Previous_MI) + strata(Stroke) + strata(Pre_Cath_Arrest) + BBB + strata(M_Injury), data=IncludedTransmissions2.DF)
+summary(cox_MACE_CCL)
+cox_MACE_CCL_assumptions <- cox.zph(cox_MACE_CCL)
+cox_MACE_CCL_assumptions
+
+# Unadjusted M1: csHR for NCVDeath
+cox_NCVD_CCL_M1 <- coxph(Surv(FUTorComp_Months, Status.NCVDeath) ~ CCL2, data=IncludedTransmissions2.DF)
+summary(cox_NCVD_CCL_M1)
+cox_NCVD_CCL_M1_assumptions <- cox.zph(cox_NCVD_CCL_M1)
+cox_NCVD_CCL_M1_assumptions
+
+# Adjusted M2: csHR for NCVDeath + Age + Sex
+cox_NCVD_CCL_M2 <- coxph(Surv(FUTorComp_Months, Status.NCVDeath) ~ CCL2 + pspline(Age) + FemaleGender, data=IncludedTransmissions2.DF)
+summary(cox_NCVD_CCL_M2)
+cox_NCVD_CCL_M2_assumptions <- cox.zph(cox_NCVD_CCL_M2)
+cox_NCVD_CCL_M2_assumptions
+
+# Final model: csHR for NCVDeath fully adjusted
+cox_NCVD_CCL <- coxph(Surv(FUTorComp_Months, Status.NCVDeath) ~ CCL2 + pspline(Age) + FemaleGender + Any_DM + strata(Previous_MI) + strata(Stroke) + strata(Pre_Cath_Arrest) + BBB + strata(M_Injury), data=IncludedTransmissions2.DF)
+summary(cox_NCVD_CCL)
+cox_NCVD_CCL_assumptions <- cox.zph(cox_NCVD_CCL)
+cox_NCVD_CCL_assumptions
+
+```
+
+```{r Cox-CCL-Nonactivation, include=FALSE}
+### Adjusted HR for All-cause death in CCL cancellation alone
+cox_Death_CCL_cancellation_alone <- coxph(Surv(FUTorDeath_Months, Status.Death) ~  pspline(Age) + FemaleGender + Any_DM + Previous_MI + Stroke + strata(Pre_Cath_Arrest) + BBB + MI_Injury, data=Lab.Not.Activated.DF)
+summary(cox_Death_CCL_cancellation_alone)
+cox_Death_CCL_cancellation_alone_assumptions <- cox.zph(cox_Death_CCL_cancellation_alone)
+cox_Death_CCL_cancellation_alone_assumptions
+
+# Adjusted csHR for MACE in patients with CCL cancellation alone
+cox_MACE_CCL_cancellation_alone <- coxph(Surv(FUTorComp_Months, Status.Comp2) ~ pspline(Age) + FemaleGender + Any_DM + Previous_MI + Stroke + strata(Pre_Cath_Arrest) + BBB + MI_Injury, data=Lab.Not.Activated.DF)
+summary(cox_MACE_CCL_cancellation_alone)
+cox_MACE_CCL_cancellation_alone_assumptions <- cox.zph(cox_MACE_CCL_cancellation_alone)
+cox_MACE_CCL_cancellation_alone_assumptions
+
+# Adjusted csHR for NCVD in patients with CCL cancellation alone
+cox_NCVD_CCL_cancellation_alone <- coxph(Surv(FUTorComp_Months, Status.NCVDeath) ~ pspline(Age) + FemaleGender + Any_DM + Previous_MI + Stroke + strata(Pre_Cath_Arrest) + BBB + MI_Injury, data=Lab.Not.Activated.DF)
+summary(cox_NCVD_CCL_cancellation_alone)
+cox_NCVD_CCL_cancellation_alone_assumptions <- cox.zph(cox_NCVD_CCL_cancellation_alone)
+cox_NCVD_CCL_cancellation_alone_assumptions
+#ggcoxzph(cox_NCVD_CCL_cancellation_alone_assumptions)
+```
+
+# Tables
+**Table 1. Baseline Characteristics Stratified by Cardiac Catheterisation Laboratory Activation**
+```{r Table1, include=FALSE}
+# GTsummary
+reset_gtsummary_theme()
+theme_gtsummary_compact(set_theme = TRUE)
+set_gtsummary_theme(AF.GTsummary)
+
+# Table 1
+Table1.DF <- IncludedTransmissions2.DF %>% dplyr::select(CCL_Activated, Age, FemaleGender, Any_DM, Hypertension, Dyslipidaemia, Previous_MI, Stroke, FHx, Current_Smoker, STEMI_ECG_Criteria, Non_Specific_STE, Q_Waves, LBBB, RBBB, LVH, Pre_Cath_Arrest, TnT_URL, Received_Fibrinolytics, Cath_During_Admission, Culprit, PCI, CABG, MI, STEMI_Diagnosis, NSTEMI, Acute_Myocardial_Injury, Chronic_Myocardial_Injury, No_Myocardial_Injury)
+
+Table1.TB <- Table1.DF %>%
+tbl_summary(by = CCL_Activated, 
+            type = list(c(Age, TnT_URL) ~ "continuous", c(FemaleGender, Any_DM, Hypertension, Dyslipidaemia, Previous_MI, Stroke, FHx, Current_Smoker, STEMI_ECG_Criteria, Non_Specific_STE, Q_Waves, LBBB, RBBB, LVH, Pre_Cath_Arrest, Cath_During_Admission, PCI, CABG, MI, STEMI_Diagnosis, NSTEMI, Acute_Myocardial_Injury, Chronic_Myocardial_Injury, No_Myocardial_Injury, Culprit, Received_Fibrinolytics) ~ "dichotomous"),
+            value = list(Culprit ~ "1"),
+            label = list(Age ~ "Age, years", FemaleGender ~ "Female", Any_DM ~ "Diabetes mellitus", Previous_MI ~ "Previous MI", Stroke ~ "Previous stroke", FHx ~ "Family history of CAD", Current_Smoker ~ "Smoker", STEMI_ECG_Criteria ~ "STEMI ECG Criteria", Non_Specific_STE ~ "Nondiagnostic ST-segment elevation", Q_Waves ~ "Q waves", LBBB ~ "Left bundle branch block", RBBB ~ "Right bundle branch block", LVH ~ "Left ventricular hypertrophy", Pre_Cath_Arrest ~ "Cardiac arrest", TnT_URL ~ "Peak troponin T / upper reference limit", Cath_During_Admission ~ "Invasive coronary angiography", Culprit ~ "Culprit coronary artery", MI ~ "MI", STEMI_Diagnosis ~ "STEMI", NSTEMI ~ "Non-STEMI", Acute_Myocardial_Injury ~ "Acute myocardial injury", Chronic_Myocardial_Injury ~ "Chronic myocardial injury", No_Myocardial_Injury ~ "No myocardial injury", Received_Fibrinolytics ~ "Fibrinolysis"), 
+            missing="no") %>% add_p(pvalue_fun = ~style_pvalue(.x, digits = 2)) %>%
+  modify_header(update = list(label ~ "**Variable**", stat_1 ~ "**CCL Activation**<br>(n={n})", stat_2 ~ "**CCL Nonactivation**<br>(n={n})", p.value ~ "***P***")) %>%
+  modify_footnote(list(starts_with("stat") ~ "Values are n (%) or median (interquartile range). Three patients with CCL activation expired before emergency coronary angiography. CABG indicates coronary artery bypass graft surgery; CAD, coronary artery disease; CCL, cardiac catheter laboratory; ECG, electrocardiogram; PCI, percutaneous coronary intervention; STEMI, ST-segment elevation myocardial infarction.", starts_with("P") ~ NA), abbreviation = FALSE) %>%
+  as_gt()
+
+# GT formatting
+Table1.TB <- Table1.TB %>%
+  tab_options(table.align = "left") %>%
+  tab_options(table.font.size = 12) %>%
+  tab_options(table.font.names = "arial") %>%
+  tab_options(table.font.color = "black") %>%
+  tab_options(data_row.padding = px(1)) %>%
+  tab_options(footnotes.padding = px(1)) %>%
+  tab_options(column_labels.padding = px(1)) %>%
+  tab_options(table.border.top.style = "solid") %>%
+  tab_options(table.border.top.color = "#000000") %>%
+  tab_options(table.border.top.width = px(1)) %>%
+  tab_options(table.border.bottom.style = "solid") %>%
+  tab_options(table.border.bottom.color = "white") %>%
+  tab_options(table.border.bottom.width = px(0)) %>%
+  tab_options(column_labels.background.color = "darkgrey") %>%
+  tab_options(column_labels.border.top.style = "solid") %>%
+  tab_options(column_labels.border.top.width = px(1)) %>%
+  tab_options(column_labels.border.top.color = "#000000") %>%
+  tab_options(column_labels.border.bottom.style = "solid") %>%
+  tab_options(column_labels.border.bottom.width = px(1)) %>%
+  tab_options(column_labels.border.bottom.color = "#000000") %>%
+  tab_options(column_labels.border.lr.style = "solid") %>%
+  tab_options(column_labels.border.lr.width = px(1)) %>%
+  tab_options(column_labels.border.lr.color = "#000000") %>%
+  tab_options(column_labels.vlines.style = "solid") %>%
+  tab_options(column_labels.vlines.width = px(1)) %>%
+  tab_options(column_labels.vlines.color = "#000000") %>%
+  tab_options(table_body.vlines.style = "solid") %>%
+  tab_options(table_body.vlines.width = px(1)) %>%
+  tab_options(table_body.vlines.color = "#000000") %>%
+  tab_options(table_body.hlines.style = "solid") %>%
+  tab_options(table_body.hlines.color = "#000000") %>%
+  tab_options(table_body.hlines.width = px(1)) %>%
+  tab_options(table_body.border.top.style = "solid") %>%
+  tab_options(table_body.border.top.width = px(1)) %>%
+  tab_options(table_body.border.top.color = "#000000") %>%
+  tab_options(table_body.border.bottom.style = "solid") %>%
+  tab_options(table_body.border.bottom.width = px(1)) %>%
+  tab_options(table_body.border.bottom.color = "#000000") %>%
+  tab_options(footnotes.border.bottom.style = NULL) %>%
+  tab_options(footnotes.border.bottom.color = NULL) %>%
+  tab_options(footnotes.border.bottom.width = NULL) %>%
+  tab_options(footnotes.border.lr.style = NULL) %>%
+  tab_options(footnotes.border.lr.color = NULL) %>%
+  tab_options(footnotes.border.lr.width = NULL) %>%
+  tab_style(style = cell_text(color = "#000000"), locations = cells_column_labels(columns = everything())) %>%
+  tab_style(style = cell_borders(sides = "left", style = "solid", color = "#000000"), locations = cells_body(columns = label, rows = everything())) %>%
+  tab_style(style = cell_borders(sides = "right", style = "solid", color = "#000000"), locations = cells_body(columns = p.value, rows = everything())) %>%
+  cols_align(align = "center", columns = 2:3) %>%
+  tab_row_group(
+    label = md("Baseline characteristics"),
+    id = 1,
+    rows = c(1:2)) %>%
+    tab_row_group(
+    label = md("Past medical history"),
+    id = 2,
+    rows = c(3:9)) %>%
+    tab_row_group(
+    label = md("Adjudicated index ECG"),
+    id = 3,
+    rows = c(10:15)) %>%
+    tab_row_group(
+    label = md("Presentation characteristics"),
+    id = 4,
+    rows = c(16:22)) %>%
+    tab_row_group(
+    label = md("Adjudicated index diagnoses"),
+    id = 5,
+    rows = c(23:28)) %>%
+    row_group_order(
+    groups = c("1", "2", "3", "4", "5")) %>%
+    tab_style(
+    style = list(cell_fill(color = "#D3D3D3"), cell_borders(sides = "all", color = "#000000", style = "solid", weight = px(1))), locations = cells_row_groups(groups = 1:5)) %>%
+    tab_style(style = cell_text(indent = px(4)),locations = cells_body(columns = label, rows = 24:25)) %>%
+    opt_footnote_marks(marks = c("", "*", "†", "‡", "§", "||", "#", "**")) %>%
+    tab_footnote(footnote = gt::html("Peak troponin T levels were divided by the upper reference limits to facilitate comparison of results between 4<sup>th</sup>-generation and high-sensitivity assays."), locations = cells_body(columns = label, rows = 17)) %>%
+   tab_footnote(footnote = gt::html("Adjudicated according to the 4<sup>th</sup> Universal Definition of MI."), locations = cells_row_groups(groups=5)) %>%
+    cols_width(label ~ px(220)) %>%
+    cols_width(stat_1 ~ px(120)) %>%
+    cols_width(stat_2 ~ px(120)) %>%
+    cols_width(p.value ~ px(50)) 
+
+Table1.TB %>% 
+  gtsave("transmission2_table1.html", path = "tables")
+
+#Table1.TB <- Table1.TB %>%
+  #as_latex()
+
+Table1.TB
+```
+
+**Table 2. Clinical Outcomes at Two Years stratified by Cardiac Catheterisation Laboratory Nonactivation Versus Activation**
+```{r Table2, include=FALSE}
+# Clinical outcome tables at 2 years
+reset_gtsummary_theme()
+theme_gtsummary_compact()
+set_gtsummary_theme(AF.GTsummary)
+
+CO.2yrs.CCL.Death.TB <- IncludedTransmissions2.DF %>% dplyr::select(X2_Year_DeathBinary, CCL_Activated) %>% tbl_summary(by = CCL_Activated, type = list(CCL_Activated ~ "categorical", X2_Year_DeathBinary ~ "dichotomous"), label = list(X2_Year_DeathBinary ~ "All-cause death"), missing = "no") %>% modify_header(label ~ "") %>% modify_header(update = all_stat_cols() ~ "{level}")
+
+CO.2yrs.CCL.CVDeath.TB <- IncludedTransmissions2.DF %>% dplyr::select(X2_Year_CVDeathNumeric, CCL_Activated) %>% tbl_summary(by = CCL_Activated, type = list(CCL_Activated ~ "categorical", X2_Year_CVDeathNumeric ~ "dichotomous"), label = list(X2_Year_CVDeathNumeric ~ "Cardiovascular death"), missing = "no") %>% modify_header(label ~ "") %>% modify_header(update = all_stat_cols() ~ "{level}")
+
+CO.2yrs.CCL.NCVDeath.TB <- IncludedTransmissions2.DF %>% dplyr::select(X2_Year_NCVDeathNumeric, CCL_Activated) %>% tbl_summary(by = CCL_Activated, type = list(CCL_Activated ~ "categorical", X2_Year_NCVDeathNumeric ~ "dichotomous"), label = list(X2_Year_NCVDeathNumeric ~ "Noncardiovascular death"), missing = "no") %>% modify_header(label ~ "") %>% modify_header(update = all_stat_cols() ~ "{level}")
+
+CO.2yrs.CCL.SMI.TB <- IncludedTransmissions2.DF %>% dplyr::select(X2_Year_ReMINumeric, CCL_Activated) %>% tbl_summary(by = CCL_Activated, type = list(CCL_Activated ~ "categorical", X2_Year_ReMINumeric ~ "dichotomous"), label = list(X2_Year_ReMINumeric ~ "MI"), missing = "no") %>% modify_header(label ~ "") %>% modify_header(update = all_stat_cols() ~ "{level}")
+
+CO.2yrs.CCL.HF.TB <- IncludedTransmissions2.DF %>% dplyr::select(X2_Year_HospHFNumeric, CCL_Activated) %>% tbl_summary(by = CCL_Activated, type = list(CCL_Activated ~ "categorical", X2_Year_HospHFNumeric ~ "dichotomous"), label = list(X2_Year_HospHFNumeric ~ "Heart failure hospitalisation"), missing = "no") %>% modify_header(label ~ "") %>% modify_header(update = all_stat_cols() ~ "{level}")
+
+CO.2yrs.CCL.Stroke.TB <- IncludedTransmissions2.DF %>% dplyr::select(X2_Year_StrokeNumeric, CCL_Activated) %>% tbl_summary(by = CCL_Activated, type = list(CCL_Activated ~ "categorical", X2_Year_StrokeNumeric ~ "dichotomous"), label = list(X2_Year_StrokeNumeric ~ "Stroke"), missing = "no") %>% modify_header(label ~ "") %>% modify_header(update = all_stat_cols() ~ "{level}")
+
+CO.2yrs.CCL.Comp.TB <- IncludedTransmissions2.DF %>% dplyr::select(X2_Year_Composite2Numeric, CCL_Activated) %>% tbl_summary(by = CCL_Activated, type = list(CCL_Activated ~ "categorical", X2_Year_Composite2Numeric ~ "dichotomous"), label = list(X2_Year_Composite2Numeric ~ "Cardiovascular death/MI/stroke"), missing = "no") %>% modify_header(label ~ "") %>% modify_header(update = all_stat_cols() ~ "{level}")
+
+# RR tables
+reset_gtsummary_theme()
+theme_gtsummary_journal(journal = "jama", set_theme = TRUE)
+theme_gtsummary_compact(set_theme = TRUE)
+
+# Adjusted CCL cancellation versus activation
+A.RR.CCL.Death.TB <- tbl_regression(A.RR.CCL.Death, exponentiate=TRUE, label="X2_Year_DeathBinary"~"All-cause death",include=X2_Year_DeathBinary) %>% add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_p = TRUE, hide_ci = TRUE, hide_se = TRUE) %>% modify_header(list(label ~ "", estimate ~ "Adjusted RR (95% CI)"))
+
+A.RR.CCL.CVDeath.TB <- tbl_regression(A.RR.CCL.CVDeath, exponentiate=TRUE, label="X2_Year_CVDeathNumeric"~"Cardiovascular death",include=X2_Year_CVDeathNumeric) %>% add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_p = TRUE, hide_ci = TRUE, hide_se = TRUE) %>% modify_header(list(label ~ "", estimate ~ "Adjusted RR (95% CI)"))
+
+A.RR.CCL.NCVDeath.TB <- tbl_regression(A.RR.CCL.NCVDeath, exponentiate=TRUE, label="X2_Year_NCVDeathNumeric"~"Noncardiovascular death",include=X2_Year_NCVDeathNumeric) %>% add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_p = TRUE, hide_ci = TRUE, hide_se = TRUE) %>% modify_header(list(label ~ "", estimate ~ "Adjusted RR (95% CI)"))
+
+A.RR.CCL.Comp.TB <- tbl_regression(A.RR.CCL.Comp,exponentiate=TRUE, label="X2_Year_Composite2Numeric"~"Cardiovascular death/MI/stroke", include=X2_Year_Composite2Numeric) %>% add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_p = TRUE, hide_ci = TRUE, hide_se = TRUE) %>% modify_header(list(label ~ "", estimate ~ "Adjusted RR (95% CI)"))
+
+A.RR.CCL.SMI.TB <- tbl_regression(A.RR.CCL.SMI,exponentiate=TRUE, label="X2_Year_ReMINumeric"~"MI", include=X2_Year_ReMINumeric) %>% add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_p = TRUE, hide_ci = TRUE, hide_se = TRUE) %>% modify_header(list(label ~ "", estimate ~ "Adjusted RR (95% CI)"))
+
+A.RR.CCL.HF.TB <- tbl_regression(A.RR.CCL.HF,exponentiate=TRUE, label="X2_Year_HospHFNumeric"~"Heart failure hospitalisation", include=X2_Year_HospHFNumeric) %>% add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_p = TRUE, hide_ci = TRUE, hide_se = TRUE) %>% modify_header(list(label ~ "", estimate ~ "Adjusted RR (95% CI)"))
+
+A.RR.CCL.Stroke.TB <- tbl_regression(A.RR.CCL.Stroke,exponentiate=TRUE, label="X2_Year_StrokeNumeric"~"Stroke", include=X2_Year_StrokeNumeric) %>% add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_p = TRUE, hide_ci = TRUE, hide_se = TRUE) %>% modify_header(list(label ~ "", estimate ~ "Adjusted RR (95% CI)"))
+
+# Merge CO and Adjusted RR
+
+CO.RR.CCL.1 <- tbl_merge(tbls = list(CO.2yrs.CCL.Death.TB, A.RR.CCL.Death.TB)) %>% modify_spanning_header(everything() ~ NA_character_)
+
+CO.RR.CCL.2 <- tbl_merge(tbls = list(CO.2yrs.CCL.Comp.TB, A.RR.CCL.Comp.TB)) %>% modify_spanning_header(everything() ~ NA_character_)
+   
+CO.RR.CCL.3 <- tbl_merge(tbls = list(CO.2yrs.CCL.CVDeath.TB, A.RR.CCL.CVDeath.TB)) %>% modify_spanning_header(everything() ~ NA_character_)
+
+CO.RR.CCL.4 <- tbl_merge(tbls = list(CO.2yrs.CCL.NCVDeath.TB, A.RR.CCL.NCVDeath.TB)) %>% modify_spanning_header(everything() ~ NA_character_)
+
+CO.RR.CCL.5 <- tbl_merge(tbls = list(CO.2yrs.CCL.SMI.TB, A.RR.CCL.SMI.TB)) %>% modify_spanning_header(everything() ~ NA_character_)
+
+CO.RR.CCL.6 <- tbl_merge(tbls = list(CO.2yrs.CCL.HF.TB, A.RR.CCL.HF.TB)) %>% modify_spanning_header(everything() ~ NA_character_)
+
+CO.RR.CCL.7 <- tbl_merge(tbls = list(CO.2yrs.CCL.Stroke.TB, A.RR.CCL.Stroke.TB)) %>% modify_spanning_header(everything() ~ NA_character_)
+
+# Stack CO and RR
+CO.RR.CCL.TB <- tbl_stack(tbls = list(CO.RR.CCL.1, CO.RR.CCL.2, CO.RR.CCL.3, CO.RR.CCL.5, CO.RR.CCL.7, CO.RR.CCL.4, CO.RR.CCL.6)) %>%
+  modify_header(update = list(label ~ "Variable")) %>%
+  as_tibble() %>%
+  add_column(UA.RR.DF[,2], .after = 3) %>%
+  gt(id="table2")
+
+# GT formatting
+CO.RR.CCL.TB <- CO.RR.CCL.TB %>%
+ tab_options(table.align = "left") %>%
+  tab_options(table.font.size = 12) %>%
+  tab_options(table.font.names = "arial") %>%
+  tab_options(table.font.color = "black") %>%
+  tab_options(data_row.padding = px(1)) %>%
+  tab_options(footnotes.padding = px(1)) %>%
+  tab_options(column_labels.padding = px(1)) %>%
+  tab_options(table.border.top.style = "solid") %>%
+  tab_options(table.border.top.color = "#000000") %>%
+  tab_options(table.border.top.width = px(1)) %>%
+  tab_options(table.border.bottom.style = "solid") %>%
+  tab_options(table.border.bottom.color = "white") %>%
+  tab_options(table.border.bottom.width = px(0)) %>%
+  tab_options(column_labels.background.color = "darkgrey") %>%
+  tab_options(column_labels.border.top.style = "solid") %>%
+  tab_options(column_labels.border.top.width = px(1)) %>%
+  tab_options(column_labels.border.top.color = "#000000") %>%
+  tab_options(column_labels.border.bottom.style = "solid") %>%
+  tab_options(column_labels.border.bottom.width = px(1)) %>%
+  tab_options(column_labels.border.bottom.color = "#000000") %>%
+  tab_options(column_labels.border.lr.style = "solid") %>%
+  tab_options(column_labels.border.lr.width = px(1)) %>%
+  tab_options(column_labels.border.lr.color = "#000000") %>%
+  tab_options(column_labels.vlines.style = "solid") %>%
+  tab_options(column_labels.vlines.width = px(1)) %>%
+  tab_options(column_labels.vlines.color = "#000000") %>%
+  tab_options(table_body.vlines.style = "solid") %>%
+  tab_options(table_body.vlines.width = px(1)) %>%
+  tab_options(table_body.vlines.color = "#000000") %>%
+  tab_options(table_body.hlines.style = "solid") %>%
+  tab_options(table_body.hlines.color = "#000000") %>%
+  tab_options(table_body.hlines.width = px(1)) %>%
+  tab_options(table_body.border.top.style = "solid") %>%
+  tab_options(table_body.border.top.width = px(1)) %>%
+  tab_options(table_body.border.top.color = "#000000") %>%
+  tab_options(table_body.border.bottom.style = "solid") %>%
+  tab_options(table_body.border.bottom.width = px(1)) %>%
+  tab_options(table_body.border.bottom.color = "#000000") %>%
+  tab_options(footnotes.border.bottom.style = NULL) %>%
+  tab_options(footnotes.border.bottom.color = NULL) %>%
+  tab_options(footnotes.border.bottom.width = NULL) %>%
+  tab_options(footnotes.border.lr.style = NULL) %>%
+  tab_options(footnotes.border.lr.color = NULL) %>%
+  tab_options(footnotes.border.lr.width = NULL) %>%
+  tab_style(style = cell_text(color = "#000000"), locations = cells_column_labels(columns = everything())) %>%
+  tab_style(style = cell_borders(sides = "left", style = "solid", color = "#000000"), locations = cells_body(columns = "Variable", rows = everything())) %>%
+  tab_style(style = cell_borders(sides = "right", style = "solid", color = "#000000"), locations = cells_body(columns = "Adjusted RR (95% CI)", rows = everything())) %>%
+  cols_align(align = "center", columns = 2:5) %>%
+  opt_footnote_marks(marks = c("", "*", "†", "‡", "§", "||", "#", "**")) %>%
+  tab_style(style = cell_text(indent = px(4)),locations = cells_body(columns = 1, rows = 3:5)) %>%
+  tab_spanner(label = md("**CCL Nonactivation Versus Activation**"), columns = 4:5) %>%
+  opt_css(
+  css = "
+  #table2 .gt_column_spanner {
+  border-bottom-width: 0px;
+  color: black;
+  }"
+  ) %>%
+ tab_style(style = list(cell_fill(color = "darkgrey"), cell_borders(sides = "bottom", style = "solid", weight = px(1))), locations = cells_column_spanners(spanners = everything())) %>%
+  cols_label("Variable" = md("**Variable**"),"CCL Activation" = md(paste0('**CCL Activation**<br>', '(n=', Flow.Chart.Vector[18], ')')),"CCL Nonactivation" = md(paste0('**CCL Nonactivation**<br>', '(n=', Flow.Chart.Vector[19], ')')),"Unadjusted RR (95% CI)" = md("**Unadjusted RR**<br>(95% CI)"),"Adjusted RR (95% CI)" = md("**Adjusted RR**<br>(95% CI)")) %>%
+    tab_footnote(footnote = "A composite outcome of cardiovascular death, MI and stroke.", locations = cells_body(columns="Variable", rows=2)) %>%
+    tab_footnote(footnote = "Values are n (%) with RR and 95% CI. Adjusted RR were obtained using a generalized linear model with a log link, Poisson error distribution, and adjusted for age, sex, diabetes mellitus, previous MI, previous stroke, cardiac arrest, bundle branch block, and troponin elevation. CI indicates confidence interval; MI, myocardial infarction; RR, risk ratio.", locations = cells_column_labels(columns= 2:3)) %>%
+    tab_footnote(footnote = "Causes of death were undetermined in 30 patients and were classified as cardiovascular.", locations = cells_body(columns = 1, rows = 1)) %>%
+    cols_width("Variable" ~ px(185)) %>%
+    cols_width("CCL Activation" ~ px(120)) %>%
+    cols_width("CCL Nonactivation" ~ px(120)) %>%
+    cols_width("Unadjusted RR (95% CI)" ~ px(120)) %>%
+    cols_width("Adjusted RR (95% CI)" ~ px(120))
+
+CO.RR.CCL.TB %>% 
+  gtsave("transmission2_table2.html", path = "tables")
+
+#CO.RR.CCL.TB <- CO.RR.CCL.TB %>%
+  #as_latex()
+
+CO.RR.CCL.TB
+```
+
+**Table 3. Hazard Ratio for All-Cause Death and Cause-Specific Hazard Ratios for the Composite Outcome of Cardiovascular Death/Myocardial Infarction/Stroke and Noncardiovascular Death in Patients with Cardiac Catheterisation Laboratory Nonactivation Versus Activation in Unadjusted and Adjusted Cox-Regression Models**
+```{r Table3, include=FALSE}
+# Death
+Table3.1.TB <- tbl_regression(cox_Death_CCL_M1, exponentiate = TRUE, pvalue_fun = ~style_pvalue(.x, digits = 2), include = "CCL2", show_single_row = "CCL2") %>%
+  modify_header(label ~ "**Variable**")%>%
+  modify_header(update = list(p.value ~ "***P***", estimate ~ "**HR (95% CI)**")) %>%
+  remove_row_type("CCL2", type = "header") %>%
+  add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_ci = TRUE, hide_se = TRUE, hide_p = FALSE) %>%
+  modify_table_body(
+    ~ .x %>% 
+  dplyr::mutate(label=ifelse(label=="CCL2","Model 1", NA)))
+
+Table3.2.TB <- tbl_regression(cox_Death_CCL_M2, exponentiate = TRUE, pvalue_fun = ~style_pvalue(.x, digits = 2), include = "CCL2", show_single_row = "CCL2") %>%
+  modify_header(label ~ "**Variable**")%>%
+  modify_header(update = list(p.value ~ "***P***", estimate ~ "**HR (95% CI)**")) %>%
+  remove_row_type("CCL2", type = "header") %>%
+  add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_ci = TRUE, hide_se = TRUE, hide_p = FALSE) %>%
+  modify_table_body(
+    ~ .x %>% 
+  dplyr::mutate(label=ifelse(label=="CCL2","Model 2", NA)))
+
+Table3.3.TB <- tbl_regression(cox_Death_CCL, exponentiate = TRUE, pvalue_fun = ~style_pvalue(.x, digits = 2), include = "CCL2", show_single_row = "CCL2") %>%
+  modify_header(label ~ "**Variable**")%>%
+  modify_header(update = list(p.value ~ "***P***", estimate ~ "**HR (95% CI)**")) %>%
+  remove_row_type("CCL2", type = "header") %>%
+  add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_ci = TRUE, hide_se = TRUE, hide_p = FALSE) %>%
+  modify_table_body(
+    ~ .x %>% 
+  dplyr::mutate(label=ifelse(label=="CCL2","Model 3", NA)))
+
+# MACE
+Table3.4.TB <- tbl_regression(cox_MACE_CCL_M1, exponentiate = TRUE, pvalue_fun = ~style_pvalue(.x, digits = 2), include = "CCL2", show_single_row = "CCL2") %>%
+  modify_header(label ~ "**Variable**")%>%
+  modify_header(update = list(p.value ~ "***P***", estimate ~ "**HR (95% CI)**")) %>%
+  remove_row_type("CCL2", type = "header") %>%
+  add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_ci = TRUE, hide_se = TRUE, hide_p = FALSE) %>%
+  modify_table_body(
+    ~ .x %>% 
+  dplyr::mutate(label=ifelse(label=="CCL2","Model 1", NA)))
+
+Table3.5.TB <- tbl_regression(cox_MACE_CCL_M2, exponentiate = TRUE, pvalue_fun = ~style_pvalue(.x, digits = 2), include = "CCL2", show_single_row = "CCL2") %>%
+  modify_header(label ~ "**Variable**")%>%
+  modify_header(update = list(p.value ~ "***P***", estimate ~ "**HR (95% CI)**")) %>%
+  remove_row_type("CCL2", type = "header") %>%
+  add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_ci = TRUE, hide_se = TRUE, hide_p = FALSE) %>%
+  modify_table_body(
+    ~ .x %>% 
+  dplyr::mutate(label=ifelse(label=="CCL2","Model 2", NA)))
+
+Table3.6.TB <- tbl_regression(cox_MACE_CCL, exponentiate = TRUE, pvalue_fun = ~style_pvalue(.x, digits = 2), include = "CCL2", show_single_row = "CCL2") %>%
+  modify_header(label ~ "**Variable**")%>%
+  modify_header(update = list(p.value ~ "***P***", estimate ~ "**HR (95% CI)**")) %>%
+  remove_row_type("CCL2", type = "header") %>%
+  add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_ci = TRUE, hide_se = TRUE, hide_p = FALSE) %>%
+  modify_table_body(
+    ~ .x %>% 
+  dplyr::mutate(label=ifelse(label=="CCL2","Model 3", NA)))
+
+# NCVD
+Table3.7.TB <- tbl_regression(cox_NCVD_CCL_M1, exponentiate = TRUE, pvalue_fun = ~style_pvalue(.x, digits = 2), include = "CCL2", show_single_row = "CCL2") %>%
+  modify_header(label ~ "**Variable**")%>%
+  modify_header(update = list(p.value ~ "***P***", estimate ~ "**HR (95% CI)**"))%>%
+  remove_row_type("CCL2", type = "header") %>%
+  add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_ci = TRUE, hide_se = TRUE, hide_p = FALSE) %>%
+  modify_table_body(
+    ~ .x %>% 
+  dplyr::mutate(label=ifelse(label=="CCL2","Model 1", NA)))
+
+Table3.8.TB <- tbl_regression(cox_NCVD_CCL_M2, exponentiate = TRUE, pvalue_fun = ~style_pvalue(.x, digits = 2), include = "CCL2", show_single_row = "CCL2") %>%
+  modify_header(label ~ "**Variable**")%>%
+  modify_header(update = list(p.value ~ "***P***", estimate ~ "**HR (95% CI)**"))%>%
+  remove_row_type("CCL2", type = "header") %>%
+  add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_ci = TRUE, hide_se = TRUE, hide_p = FALSE) %>%
+  modify_table_body(
+    ~ .x %>% 
+  dplyr::mutate(label=ifelse(label=="CCL2","Model 2", NA)))
+
+Table3.9.TB <- tbl_regression(cox_NCVD_CCL, exponentiate = TRUE, pvalue_fun = ~style_pvalue(.x, digits = 2), include = "CCL2", show_single_row = "CCL2") %>%
+  modify_header(label ~ "**Variable**")%>%
+  modify_header(update = list(p.value ~ "***P***", estimate ~ "**HR (95% CI)**"))%>%
+  remove_row_type("CCL2", type = "header") %>%
+  add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_ci = TRUE, hide_se = TRUE, hide_p = FALSE) %>%
+  modify_table_body(
+    ~ .x %>% 
+  dplyr::mutate(label=ifelse(label=="CCL2","Model 3", NA)))
+
+# Stack
+Table3.TB <-
+  tbl_stack(
+    tbls = list(Table3.1.TB, Table3.2.TB,  Table3.3.TB,  Table3.4.TB,  Table3.5.TB,  Table3.6.TB, Table3.7.TB, Table3.8.TB, Table3.9.TB)) %>%
+  modify_footnote(starts_with("estimate") ~ "Multivariable Cox-regression with CCL activation as the referent group. *P* value for inclusion of index diagnosis term. CCL indicates cardiac catheter laboratory; CI, confidence interval; HR, hazard ratio; MI, myocardial infarction.", abbreviation = TRUE) %>%
+  modify_footnote(everything() ~ NA, abbreviation = FALSE ) %>%
+  as_gt()
+
+# GT formatting
+Table3.TB <- Table3.TB %>%
+  tab_options(table.align = "left") %>%
+  tab_options(table.font.size = 12) %>%
+  tab_options(table.font.names = "arial") %>%
+  tab_options(table.font.color = "black") %>%
+  tab_options(data_row.padding = px(1)) %>%
+  tab_options(footnotes.padding = px(1)) %>%
+  tab_options(column_labels.padding = px(1)) %>%
+  tab_options(table.border.top.style = "solid") %>%
+  tab_options(table.border.top.color = "#000000") %>%
+  tab_options(table.border.top.width = px(1)) %>%
+  tab_options(table.border.bottom.style = "solid") %>%
+  tab_options(table.border.bottom.color = "white") %>%
+  tab_options(table.border.bottom.width = px(0)) %>%
+  tab_options(column_labels.background.color = "darkgrey") %>%
+  tab_options(column_labels.border.top.style = "solid") %>%
+  tab_options(column_labels.border.top.width = px(1)) %>%
+  tab_options(column_labels.border.top.color = "#000000") %>%
+  tab_options(column_labels.border.bottom.style = "solid") %>%
+  tab_options(column_labels.border.bottom.width = px(1)) %>%
+  tab_options(column_labels.border.bottom.color = "#000000") %>%
+  tab_options(column_labels.border.lr.style = "solid") %>%
+  tab_options(column_labels.border.lr.width = px(1)) %>%
+  tab_options(column_labels.border.lr.color = "#000000") %>%
+  tab_options(column_labels.vlines.style = "solid") %>%
+  tab_options(column_labels.vlines.width = px(1)) %>%
+  tab_options(column_labels.vlines.color = "#000000") %>%
+  tab_options(table_body.vlines.style = "solid") %>%
+  tab_options(table_body.vlines.width = px(1)) %>%
+  tab_options(table_body.vlines.color = "#000000") %>%
+  tab_options(table_body.hlines.style = "solid") %>%
+  tab_options(table_body.hlines.color = "#000000") %>%
+  tab_options(table_body.hlines.width = px(1)) %>%
+  tab_options(table_body.border.top.style = "solid") %>%
+  tab_options(table_body.border.top.width = px(1)) %>%
+  tab_options(table_body.border.top.color = "#000000") %>%
+  tab_options(table_body.border.bottom.style = "solid") %>%
+  tab_options(table_body.border.bottom.width = px(1)) %>%
+  tab_options(table_body.border.bottom.color = "#000000") %>%
+  tab_options(footnotes.border.bottom.style = NULL) %>%
+  tab_options(footnotes.border.bottom.color = NULL) %>%
+  tab_options(footnotes.border.bottom.width = NULL) %>%
+  tab_options(footnotes.border.lr.style = NULL) %>%
+  tab_options(footnotes.border.lr.color = NULL) %>%
+  tab_options(footnotes.border.lr.width = NULL) %>%
+  tab_style(style = cell_text(color = "#000000"), locations = cells_column_labels(columns = everything())) %>%
+  tab_style(style = cell_borders(sides = "left", style = "solid", color = "#000000"), locations = cells_body(columns = label, rows = everything())) %>%
+  tab_style(style = cell_borders(sides = "right", style = "solid", color = "#000000"), locations = cells_body(columns = p.value, rows = everything())) %>%
+  cols_align(align = "center", columns = 2:3) %>%
+  tab_row_group(
+    label = md("All-cause death"),
+    id = 1,
+    rows = c(1:3)) %>%
+  tab_row_group(
+    label = md("Cardiovascular death/MI/stroke"),
+    id = 2,
+    rows = c(4:6)) %>%
+    tab_row_group(
+    label = md("Noncardiovascular death"),
+    id = 3,
+    rows = c(7:9)) %>%
+    row_group_order(
+    groups = c("1", "2", "3")) %>%
+  tab_style(style = list(cell_fill(color = "#D3D3D3"), cell_borders(sides = "all", style = "solid", weight = px(1))), locations = cells_row_groups(groups = everything())) %>%
+  opt_footnote_marks(marks = c("", "*", "†", "‡", "§", "||", "#", "**")) %>%
+  tab_footnote(footnote = "Unadjusted.", locations = cells_body(columns = label, rows = c(1,4,7))) %>%
+   tab_footnote(footnote = "Adjusted for age and sex.", locations = cells_body(columns = label, rows = c(2,5,8))) %>%
+  tab_footnote(footnote = "As per model 2, with adjustment for diabetes mellitus, previous MI, previous stroke, cardiac arrest, bundle branch block, and troponin elevation.", locations = cells_body(columns = label, rows = c(3,6,9))) %>%
+  tab_footnote(footnote = "Cause-specific multivariable Cox-regression.", locations = cells_row_groups(groups = 2:3)) %>%
+    tab_footnote(footnote = "A composite outcome of cardiovascular death, MI and stroke.", locations = cells_row_groups(groups = 2)) %>%
+    tab_style(style = cell_text(indent = px(4)),locations = cells_body(columns = label, rows = 1:9)) %>%
+    cols_width(label ~ px(185)) %>%
+    cols_width(estimate ~ px(100)) %>%
+    cols_width(p.value ~ px(50))
+
+Table3.TB %>% 
+  gtsave("transmission2_table3.html", path = "tables")
+
+#Table3.TB <- Table3.TB %>%
+  #as_latex()
+
+Table3.TB
+```
+
+**Table 4. Hazard Ratio for All-Cause Death and Cause-Specific Hazard Ratios for the Composite Outcome of Cardiovascular Death/Myocardial Infarction/Stroke and Noncardiovascular Death in Patients with Cardiac Catheterisation Laboratory Nonactivation Alone in Adjusted Cox-Regression Models**
+```{r Table4, include=FALSE}
+## Set theme
+reset_gtsummary_theme()
+theme_gtsummary_journal(journal = "jama", set_theme = TRUE)
+theme_gtsummary_compact(set_theme = TRUE)
+set_gtsummary_theme(AF.GTsummary)
+
+# Death
+Table4.1.TB <- tbl_regression(cox_Death_CCL_cancellation_alone, exponentiate = TRUE, pvalue_fun = ~style_pvalue(.x, digits = 2), show_single_row=c("FemaleGender", "Any_DM", "Previous_MI", "Stroke"), label=c(FemaleGender ~ "Female sex", Any_DM ~ "Diabetes mellitus", Previous_MI ~ "Previous MI", Stroke ~ "Previous stroke", BBB ~ "Bundle branch block", MI_Injury ~ "Myocardial injury pattern")) %>%
+  modify_header(label ~ "**Variable**") %>%
+  modify_header(update = p.value ~ "***P***") %>%
+  modify_header(update = estimate ~ "**HR (95% CI)**")  %>%
+  add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_ci = TRUE, hide_se = TRUE, hide_p = FALSE) %>%
+  modify_footnote(everything() ~ NA, abbreviation = TRUE) %>%
+  modify_footnote(everything() ~ NA, abbreviation = FALSE) %>%
+  modify_table_body(
+    ~ .x %>% 
+  dplyr::mutate(label=ifelse(label=="No injury","No myocardial injury", ifelse(label=="Injury","Myocardial injury", ifelse(label=="No BBB","No bundle branch block", ifelse(label=="LBBB","Left bundle branch block", ifelse(label=="RBBB","Right bundle branch block", label)))))))
+
+#Table4.1.TB$table_body$label
+
+# MACE
+Table4.2.TB <- tbl_regression(cox_MACE_CCL_cancellation_alone, exponentiate = TRUE, pvalue_fun = ~style_pvalue(.x, digits = 2), show_single_row=c("FemaleGender", "Any_DM", "Previous_MI", "Stroke"), label=c(FemaleGender ~ "Female sex", Any_DM ~ "Diabetes mellitus", Previous_MI ~ "Previous MI", Stroke ~ "Previous stroke", BBB ~ "Bundle branch block", MI_Injury ~ "Myocardial injury pattern")) %>%
+  modify_header(label ~ "**Variable**") %>%
+  modify_header(update = p.value ~ "***P***") %>%
+  modify_header(update = estimate ~ "**HR (95% CI)**") %>%
+  add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_ci = TRUE, hide_se = TRUE, hide_p = FALSE) %>%
+  modify_footnote(everything() ~ NA, abbreviation = TRUE) %>%
+  modify_footnote(everything() ~ NA, abbreviation = FALSE) %>%
+  modify_table_body(
+    ~ .x %>% 
+  dplyr::mutate(label=ifelse(label=="No injury","No myocardial injury", ifelse(label=="Injury","Myocardial injury", ifelse(label=="No BBB","No bundle branch block", ifelse(label=="LBBB","Left bundle branch block", ifelse(label=="RBBB","Right bundle branch block", label)))))))
+
+# NCVD
+Table4.3.TB <- tbl_regression(cox_NCVD_CCL_cancellation_alone, exponentiate = TRUE, pvalue_fun = ~style_pvalue(.x, digits = 2), show_single_row=c("FemaleGender", "Any_DM", "Previous_MI", "Stroke"), label=c(FemaleGender ~ "Female sex", Any_DM ~ "Diabetes mellitus", Previous_MI ~ "Previous MI", Stroke ~ "Previous stroke", BBB ~ "Bundle branch block", MI_Injury ~ "Myocardial injury pattern")) %>%
+  modify_header(label ~ "**Variable**") %>%
+  modify_header(update = p.value ~ "***P***") %>%
+  modify_header(update = estimate ~ "**HR (95% CI)**") %>%
+  add_significance_stars(pattern = "{estimate} ({conf.low}-{conf.high})", hide_ci = TRUE, hide_se = TRUE, hide_p = FALSE) %>%
+  modify_footnote(everything() ~ NA, abbreviation = TRUE) %>%
+  modify_footnote(everything() ~ NA, abbreviation = FALSE) %>%
+  modify_table_body(
+    ~ .x %>% 
+  dplyr::mutate(label=ifelse(label=="No injury","No myocardial injury", ifelse(label=="Injury","Myocardial injury", ifelse(label=="No BBB","No bundle branch block", ifelse(label=="LBBB","Left bundle branch block", ifelse(label=="RBBB","Right bundle branch block", label)))))))
+
+# Merge
+Table4.TB  <- tbl_merge(tbls = list(Table4.1.TB, Table4.2.TB, Table4.3.TB), tab_spanner = c("**All-Cause Death**", "**Cardiovascular Death/MI/Stroke**", "**Noncardiovascular Death**")) %>%
+  as_gt(id="table4")
+
+# GT formatting
+Table4.TB <- Table4.TB %>%
+  tab_options(table.align = "left") %>%
+  tab_options(table.font.size = 12) %>%
+  tab_options(table.font.names = "arial") %>%
+  tab_options(table.font.color = "black") %>%
+  tab_options(data_row.padding = px(1)) %>%
+  tab_options(footnotes.padding = px(1)) %>%
+  tab_options(column_labels.padding = px(1)) %>%
+  tab_options(table.border.top.style = "solid") %>%
+  tab_options(table.border.top.color = "#000000") %>%
+  tab_options(table.border.top.width = px(1)) %>%
+  tab_options(table.border.bottom.style = "solid") %>%
+  tab_options(table.border.bottom.color = "white") %>%
+  tab_options(table.border.bottom.width = px(0)) %>%
+  tab_options(column_labels.background.color = "darkgrey") %>%
+  tab_options(column_labels.border.top.style = "solid") %>%
+  tab_options(column_labels.border.top.width = px(1)) %>%
+  tab_options(column_labels.border.top.color = "#000000") %>%
+  tab_options(column_labels.border.bottom.style = "solid") %>%
+  tab_options(column_labels.border.bottom.width = px(1)) %>%
+  tab_options(column_labels.border.bottom.color = "#000000") %>%
+  tab_options(column_labels.border.lr.style = "solid") %>%
+  tab_options(column_labels.border.lr.width = px(1)) %>%
+  tab_options(column_labels.border.lr.color = "#000000") %>%
+  tab_options(column_labels.vlines.style = "solid") %>%
+  tab_options(column_labels.vlines.width = px(1)) %>%
+  tab_options(column_labels.vlines.color = "#000000") %>%
+  tab_options(table_body.vlines.style = "solid") %>%
+  tab_options(table_body.vlines.width = px(1)) %>%
+  tab_options(table_body.vlines.color = "#000000") %>%
+  tab_options(table_body.hlines.style = "solid") %>%
+  tab_options(table_body.hlines.color = "#000000") %>%
+  tab_options(table_body.hlines.width = px(1)) %>%
+  tab_options(table_body.border.top.style = "solid") %>%
+  tab_options(table_body.border.top.width = px(1)) %>%
+  tab_options(table_body.border.top.color = "#000000") %>%
+  tab_options(table_body.border.bottom.style = "solid") %>%
+  tab_options(table_body.border.bottom.width = px(1)) %>%
+  tab_options(table_body.border.bottom.color = "#000000") %>%
+  tab_options(footnotes.border.bottom.style = NULL) %>%
+  tab_options(footnotes.border.bottom.color = NULL) %>%
+  tab_options(footnotes.border.bottom.width = NULL) %>%
+  tab_options(footnotes.border.lr.style = NULL) %>%
+  tab_options(footnotes.border.lr.color = NULL) %>%
+  tab_options(footnotes.border.lr.width = NULL) %>%
+  tab_style(style = cell_text(color = "#000000"), locations = cells_column_labels(columns = everything())) %>%
+  tab_style(style = cell_borders(sides = "left", style = "solid", color = "#000000"), locations = cells_body(columns = label, rows = everything())) %>%
+  tab_style(style = cell_borders(sides = "right", style = "solid", color = "#000000"), locations = cells_body(columns = p.value_3, rows = everything())) %>%
+  tab_style(style = cell_fill(color = "#BEBEBE"), locations = list(cells_column_spanners(spanners = everything()))) %>%
+  opt_css(
+  css = "
+  #table4 .gt_column_spanner {
+  border-bottom-width: 0px;
+  color: black;
+  }"
+  ) %>%
+  tab_style(style = list(cell_fill(color = "darkgrey"), cell_borders(sides = c("left", "right", "bottom"), style = "solid", weight = px(1))), locations = cells_column_spanners(spanners = everything())) %>%
+  cols_align(align = "left", columns = 1) %>%
+  opt_footnote_marks(marks = c("", "*", "†", "‡", "§", "||", "#", "**")) %>%
+  tab_footnote(footnote = "Multivariable Cox-regression. Penalised splines were applied to age to accommodate nonlinearity and stratification was applied to cardiac arrest to accommodate nonproportional hazards. CI indicates confidence interval; HR, hazard ratio; MI, myocardial infarction.", locations = cells_column_spanners(spanners = "**All-Cause Death**")) %>%
+  tab_footnote(footnote = "Cause-specific multivariable Cox-regression.", locations = cells_column_labels(columns = c(estimate_2, estimate_3))) %>%
+    tab_footnote(footnote = "A composite outcome of cardiovascular death, MI and stroke.", locations = cells_column_spanners(spanners = "**Cardiovascular Death/MI/Stroke**")) %>%
+  tab_footnote(footnote = "Patients without myocardial injury as the referent group.", locations = cells_body(columns = label, rows = 9)) %>%
+  tab_footnote(footnote = "Patients without bundle branch block as the referent group.", locations = cells_body(columns = label, rows = 5)) %>%
+    cols_width(label ~ px(160)) %>%
+  cols_width(estimate_1 ~ px(114)) %>%
+  cols_width(p.value_1 ~ px(52)) %>%
+  cols_width(estimate_2 ~ px(114)) %>%
+  cols_width(p.value_2 ~ px(52)) %>%
+  cols_width(estimate_3 ~ px(114)) %>%
+  cols_width(p.value_3 ~ px(52))
+
+Table4.TB %>% 
+  gtsave("transmission2_table4.html", path = "tables")
+
+#Table4.TB <- Table4.TB %>%
+  #as_latex()
+
+Table4.TB
+```
+
+# Figures
+
+## Figure 1
+```{r fig1-code, include='false'}
+Excluded.Paste <- paste0('Excluded (n=', Flow.Chart.Vector[15], '):')
+Serial.Paste <- paste0('- Serial/duplicate ECGs ', '(n=', Flow.Chart.Vector[4], ')')
+Missing.Paste <- paste0('- Missing data ', '(n=', Flow.Chart.Vector[3], ')')
+No.Troponin.Paste <- paste0('- Troponin not tested ', '(n=', Flow.Chart.Vector[7], ')')
+Indeterminate.Paste <- paste0('- Indeterminate myocardial injury pattern ', '(n=', Flow.Chart.Vector[8], ')')
+Multiple.Paste <- paste0('- Multiple patient encounters (only the first was included) ', '(n=', Flow.Chart.Vector[32], ')')
+#Fibrinolytics.Paste <- paste0('- Received fibrinolytic therapy ', '(n=', Flow.Chart.Vector[17], ')')
+
+MI1.Paste <- paste0('- MI ', '(n=', Flow.Chart.Vector[20], ')')
+STEMI1.Paste <- paste0('∙ STEMI ', '(n=', Flow.Chart.Vector[28], ')')
+NSTEMI1.Paste <- paste0('∙ Non-STEMI ', '(n=', Flow.Chart.Vector[29], ')')
+AI1.Paste <- paste0('- Acute myocardial injury ', '(n=', Flow.Chart.Vector[21], ')')
+CI1.Paste <- paste0('- Chronic myocardial injury ', '(n=', Flow.Chart.Vector[22], ')')
+NI1.Paste <- paste0('- No myocardial injury ', '(n=', Flow.Chart.Vector[23], ')')
+
+MI2.Paste <- paste0('- MI ', '(n=', Flow.Chart.Vector[24], ')')
+STEMI2.Paste <- paste0('∙ STEMI ', '(n=', Flow.Chart.Vector[30], ')')
+NSTEMI2.Paste <- paste0('∙ Non-STEMI ', '(n=', Flow.Chart.Vector[31], ')')
+AI2.Paste <- paste0('- Acute myocardial injury ', '(n=', Flow.Chart.Vector[25], ')')
+CI2.Paste <- paste0('- Chronic myocardial injury ', '(n=', Flow.Chart.Vector[26], ')')
+NI2.Paste <- paste0('- No myocardial injury ', '(n=', Flow.Chart.Vector[27], ')')
+
+Figure1.FG <- DiagrammeR::grViz("
+digraph Fig1 {
+graph [layout = dot, fontname = arial]
+node [shape = rectangle, fontsize = 12, style = filled, fillcolor = white, color = black]
+edge [color = black]
+
+a [label = '@@1'];
+b [label = '@@2'];
+c [label = '@@3'];
+d [label = '@@4'];
+e [label = '@@5'];
+f [label = 'Adjudicated index diagnoses:\\l@@6\\l@@7\\l@@8\\l@@9\\l@@10\\l@@11\\l'];
+g [label = 'Adjudicated index diagnoses:\\l@@12\\l@@13\\l@@14\\l@@15\\l@@16\\l@@17\\l'];
+h [label = '@@18\\l@@19\\l@@20\\l@@21\\l@@22\\l@@23\\l'];
+
+a -> b 
+b -> c
+c -> d
+c -> e
+
+d -> f
+e -> g
+
+{rank=same ; b -> h}
+
+}
+
+[1]: paste0('Prehospital computer-interpreted ECG reads STEMI followed by\\ntransmission to interventional cardiologist for consultation\\n', '(n=', Flow.Chart.Vector[1], ')')
+[2]: paste0('Assessed for eligibility\\n', '(n=', Flow.Chart.Vector[1], ')')
+[3]: paste0('Study population\\n', '(n=', Flow.Chart.Vector[2], ')')
+[4]: paste0('CCL activation and\\nemergency coronary angiography\\n', '(n=', Flow.Chart.Vector[18], ')')
+[5]: paste0('CCL nonactivation and\\ntransfer to ED\\n', '(n=', Flow.Chart.Vector[19], ')')
+[6]: paste0(MI1.Paste)
+[7]: paste0(STEMI1.Paste)
+[8]: paste0(NSTEMI1.Paste)
+[9]: paste0(AI1.Paste)
+[10]: paste0(CI1.Paste)
+[11]: paste0(NI1.Paste)
+[12]: paste0(MI2.Paste)
+[13]: paste0(STEMI2.Paste)
+[14]: paste0(NSTEMI2.Paste)
+[15]: paste0(AI2.Paste)
+[16]: paste0(CI2.Paste)
+[17]: paste0(NI2.Paste)
+[18]: paste0(Excluded.Paste)
+[19]: paste0(Serial.Paste)
+[20]: paste0(Missing.Paste)
+[21]: paste0(No.Troponin.Paste)
+[22]: paste0(Indeterminate.Paste)
+[23]: paste0(Multiple.Paste)
+")
+
+# [24]: paste0(Fibrinolytics.Paste)
+
+# Vector details:
+#1. AllTransmissions.Count
+#2. IncludedTransmissions2.Count
+#3. MissingInfo.Count
+#4. Serial.Count
+#5. UGANeg.Count
+#6. LBBB.Paced.Count
+#7. NoTnT.Count
+#8. No2ndTnTnotMI.Count
+#9. MI.Count
+#10. AI.Count
+#11. CI.Count
+#12. NI.Count
+#13. STEMI.Count
+#14. NSTEMI.Count
+#15. ExcludedTransmissions2.Count
+#16. Not_MI.Count
+#17. Fibrinolysis.Count
+#18. Lab.Activated.Count
+#19. Lab.Not.Activated.Count
+#20. Lab.Activated.MI.Count
+#21. Lab.Activated.AI.Count
+#22. Lab.Activated.CI.Count
+#23. Lab.Activated.NI.Count
+#24. Lab.Not.Activated.MI.Count
+#25. Lab.Not.Activated.AI.Count
+#26. Lab.Not.Activated.CI.Count
+#27. Lab.Not.Activated.NI.Count
+#28. Lab.Activated.MI.STEMI.Count
+#29. Lab.Activated.MI.NSTEMI.Count
+#30. Lab.Not.Activated.MI.STEMI.Count
+#31. Lab.Not.Activated.MI.NSTEMI.Count
+#32. MultipleEncounters.Count
+
+# Save tiff and png then print
+#Diag_DPI = 1200
+#Diag_width = 8
+#Diag_height = 6
+
+#Figure1.FG %>%
+    #export_svg() %>%
+    #charToRaw %>%
+    #rsvg(width = Diag_width*(Diag_DPI/2.54), height = Diag_height*(Diag_DPI/2.54)) %>%
+    #tiff::writeTIFF("figures/transmission2-fig1.tiff")
+
+#Figure1.FG %>%
+  #export_svg() %>%
+  #charToRaw %>%
+  #rsvg_png(file = "Figures/Transmission2_Figure1.png", width = Diag_width*(Diag_DPI/2.54), height = Diag_height*(Diag_DPI/2.54))
+
+Figure1.FG
+```
+
+```{r fig1, include=TRUE, results='markup', fig.align='left', fig.width=8, fig.height=6, fig.cap="**Study flow diagram with identification of the study population by classification according to cardiac catheterisation laboratory activation and the 4th Universal Definition of Myocardial Infarction.** Three patients with CCL activation expired before emergency coronary angiography. Missing data was due to insufficient identifying patient information on the transmitted ECG to link to a particular patient and/or procedure. CCL indicates cardiac catheterisation laboratory; ECG, electrocardiogram; ED, emergency department; STEMI, ST-segment elevation myocardial infarction."}
+#knitr::include_graphics("figures/transmission2_fig1.png")
+Figure1.FG
+```
+
+## Figure 2
+
+```{r fig2, include=TRUE, fig.align='left', fig.width=8, fig.height=6, fig.cap="**Kaplan-Meier curves illustrating the risk of death from any cause through to two years stratified by cardiac catheterisation laboratory activation versus nonactivation, with table of number at risk.** Comparison of groups was obtained using the log-rank test. CCL indicates cardiac catheterisation laboratory; MI, myocardial infarction."}
+
+## All patients stratified by CCL status
+KM.FG <- ggsurvplot(KM_fit_Lab_Activation, data=IncludedTransmissions2.DF,
+                    theme = theme_pubr(),
+                    conf.int = FALSE,
+                    xlab = "Time since index presentation (years)",
+                    break.time.by = 0.5,
+                    xlim = c(0,2),
+                    surv.scale = "percent",
+                    legend = "top",
+                    legend.title="", 
+                    legend.labs = c("CCL Activation", "CCL Nonactivation"),
+                    censor.size = 4,
+                    surv.plot.height = 0.8,
+                    risk.table = TRUE,
+                    risk.table.y.text = FALSE,
+                    tables.height = 0.2,
+                    risk.table.fontsize = 4,
+                    tables.theme = theme_cleantable())
+
+KM.FG$plot <- KM.FG$plot + 
+theme(legend.title = element_blank(), legend.text = element_text(size = 12, color = "black", face = "bold"), plot.title = element_text(hjust = 0.5, size = 12, color = "black", face = "bold"), plot.tag = element_text(size=12, face = "bold", color = "black"), axis.text.x = element_text(size=12, hjust = 0.5, vjust = 0.8, color = "black", face = "bold", colour = "black"), axis.text.y = element_text(size = 12, hjust = 0.5, vjust = 0.8, face = "bold", colour = "black"), axis.title.x = element_text(size = 12, color = "black", face = "bold"), axis.title.y = element_text(size = 12, color = "black", face = "bold"), plot.margin=unit(c(0.5,0.5,0.5,0.5),"cm")) + scale_color_manual(name="Groups",labels=c("CCL Activation","CCL Nonactivation"), values=c("#00BA38", "#F8766D"))
+
+
+KM.FG$plot <- KM.FG$plot + 
+              ggplot2::annotate("text",
+                                size = 4,
+                                x = 1.9, y = 0.5, 
+                                label = expression(paste("Log-rank\nP < 0.001")))
+
+KM.FG$table <- KM.FG$table + labs(x = NULL, y = NULL) + theme(plot.title = element_text(size = 10, color = "black", face = "bold"))
+
+# Save TIFF
+tiff("figures/transmission2-fig2.tiff", units="in", width=8, height=6, res=300)
+KM.FG
+dev.off()
+
+# Print
+KM.FG
+```
+
+## Figure 3
+
+```{r fig3, include=TRUE, fig.align='left', fig.width=10, fig.height=6, fig.cap="**Alluvial plot illustrating the frequency of cause of death at two years grouped by cardiac catheterisation laboratory activation and adjudicated index diagnosis.** CCL activation (blue) and CCL nonactivation (red). The width of the band indicates the relative size of the population. CCL indicates cardiac catheterisation laboratory."}
+
+# Create X2_Year_Death_Categorical
+IncludedTransmissions2.DF <- mutate(IncludedTransmissions2.DF, X2_Year_Death_Categorical = ifelse(X2_Year_Death==1, "Cardiovascular Death", ifelse(X2_Year_Death==2, "Noncardiovascular Death", ifelse(X2_Year_Death==3, "Cardiovascular Death", NA))))
+IncludedTransmissions2.DF$X2_Year_Death_Categorical <- as.factor(IncludedTransmissions2.DF$X2_Year_Death_Categorical)
+
+Alluvial.DF <- IncludedTransmissions2.DF %>%
+  select(CCL_Status, UD10, X2_Year_Death_Categorical) %>%
+  filter(!is.na(X2_Year_Death_Categorical))
+  
+Alluvial.DF$Freq <- 1
+ 
+Alluvial.FG <- ggplot(
+  data = Alluvial.DF,
+  aes(
+    axis1 = CCL_Status, 
+    axis2 = UD10, 
+    axis3 = X2_Year_Death_Categorical, 
+    y = Freq)
+  ) +
+  scale_x_discrete(
+    expand = c(-0.06, -0.06)
+  ) +
+  scale_y_continuous(
+    expand = c(0, 0)
+    ) +
+  geom_alluvium(
+    aes(
+      fill = CCL_Status
+      ),
+    alpha = 0.6,
+    width = 1/4
+    ) +
+  scale_fill_brewer(type = "qual", palette = "Set1", direction = -1) +
+  ylab("Frequency (n)") +
+  geom_stratum(
+    fill = "white", 
+    color = "black",
+    width = 1/4
+    ) +
+  ggfittext::geom_fit_text(
+    stat = "stratum",
+    aes(
+      label = CCL_Status,
+      angle = 90,
+      fontface =2
+      )
+    ) +
+  ggfittext::geom_fit_text(
+    stat = "stratum",
+    aes(
+      label = UD10,
+      fontface=2
+      ),
+    reflow = TRUE,
+    min.size = 3,
+    grow = TRUE,
+    width = 1/4
+    ) +
+  geom_text(
+    stat = "stratum",
+    aes(
+      label = X2_Year_Death_Categorical,
+      angle = 90,
+      fontface=2
+      ),
+    size = 4
+    ) +
+  theme_minimal() +
+  theme(
+    panel.grid = element_blank(),
+    legend.position = "none"
+    ) +
+  theme(legend.title = element_blank(), legend.text = element_text(size = 10, color = "black", face = "bold"), plot.title = element_text(hjust = 0.5, size = 10, color = "black", face = "bold"), plot.tag = element_text(size=10, face = "bold", color = "black"), axis.text.x = element_text(size=10, hjust = 0.5, vjust = 0.8, face = "bold", colour = "black"), axis.text.y = element_text(size = 10, hjust = 0.5, vjust = 0.8, face = "bold", colour = "black"), axis.title.x = element_text(size = 10, face = "bold"), axis.title.y = element_text(size = 12, face = "bold", vjust = 2.0), plot.margin=unit(c(0.5,0.5,0.5,0.5),"cm"))
+
+
+# Save TIFF
+tiff("figures/transmission2-fig3.tiff", units="in", width=10, height=6, res=300)
+Alluvial.FG
+dev.off()
+
+Alluvial.FG 
+```
+
+## Figure 4
+
+```{r fig4, include=TRUE, fig.align='left', fig.width=10, fig.height=6, fig.cap="**Cumulative incidence curves illustrating risk of the composite outcome of cardiovascular death/myocardial infarction/stroke and competing risk of noncardiovascular death through to two years in patients with cardiac catheterisation laboratory activation versus nonactivation.** <sup>*</sup>Comparison of groups was obtained using Gray's test. CCL indicates cardiac catheterisation laboratory."}
+
+IncludedTransmissions3.DF <- IncludedTransmissions2.DF
+IncludedTransmissions3.DF <- IncludedTransmissions3.DF %>%
+  mutate(StatusCR = ifelse(Status.Comp2==1, 1, ifelse(NCVDeathNumeric==1, 2, 0)))
+
+IncludedTransmissions3.DF <- IncludedTransmissions3.DF %>%
+  mutate(Group = ifelse(Lab_Activation==1, 1, 2))
+
+e <- cuminc(IncludedTransmissions3.DF$FUTorComp_Days, IncludedTransmissions3.DF$StatusCR, IncludedTransmissions3.DF$Group, cencode=0)
+
+e1 <- data.frame (e$`1 1`$time, e$`1 1`$est)
+e1$classification <- 1
+names(e1) <- c("Time", "Event", "Classification")
+e2 <- data.frame (e$`2 1`$time, e$`2 1`$est)
+e2$classification <- 2
+names(e2) <- c("Time", "Event", "Classification")
+e3 <- data.frame (e$`1 2`$time, e$`1 2`$est)
+e3$classification <- 3
+names(e3) <- c("Time", "Event", "Classification")
+e4 <- data.frame (e$`2 2`$time, e$`2 2`$est)
+e4$classification <- 4
+names(e4) <- c("Time", "Event", "Classification")
+
+e.all <- rbind(e1,e2,e3,e4)
+e.all$Classification <- factor(e.all$Classification)
+e.all$group2 <- ifelse((e.all$Classification==1|e.all$Classification==2),"Cardiovascular Death/MI/Stroke","Noncardiovascular Death")
+
+e.MACE <- e.all %>%
+  filter(group2=="Cardiovascular Death/MI/Stroke")
+
+e.NCVDeath <- e.all %>%
+  filter(group2=="Noncardiovascular Death")
+
+#CumInc plot for MACE
+
+e.MACE.plot <- ggplot() + 
+        geom_line(aes(Time, Event, colour=Classification, group=Classification, linetype=Classification),size=1, e.MACE) + 
+  xlab("\n Time since index presentation (years)") +
+  ylab("Cumulative incidence of event\n") + 
+  coord_cartesian(ylim = c(0,0.3)) + 
+  scale_x_continuous(expand=c(0,0),limits=c(0,730.5),breaks=c(0, 365.25, 730.5),labels=c(0, 1, 2)) + 
+  scale_y_continuous(expand=c(0,0),labels = scales::percent, breaks=c(0,0.1,0.2,0.3)) +
+  scale_color_manual(name="Groups",labels=c("CCL Activation", "CCL Nonactivation"),values=c("#00BA38", "#F8766D")) + scale_linetype_manual(name="Groups",values=c(1,1),labels=c("CCL Activation", "CCL Nonactivation")) + 
+  theme_pubr() +
+  labs(tag = "A") +
+  labs(title = "Cardiovascular Death/MI/Stroke")
+
+e.MACE.plot <- e.MACE.plot + theme(legend.title = element_blank(), legend.text = element_text(size = 12, color = "black", face = "bold"), plot.title = element_text(hjust = 0.5, size = 12, color = "black", face = "bold"), plot.tag = element_text(size=12, face = "bold", color = "black"), axis.text.x = element_text(size=12, hjust = 0.5, vjust = 0.8, face = "bold", colour = "black"), axis.text.y = element_text(size = 12, hjust = 0.5, vjust = 0.8, face = "bold", colour = "black"), axis.title.x = element_text(size = 12, face = "bold"), axis.title.y = element_text(size = 12, face = "bold"), plot.margin=unit(c(0.5,0.5,0.5,0.5),"cm")) + ggplot2::annotate("text", parse=TRUE, size = 5, x = 630, y = 0.05, label = paste('P==0.016^"*"'))
+
+#CumInc plot for NCVDeath
+
+e.NCVDeath.plot <- ggplot() + 
+        geom_line(aes(Time, Event, colour=Classification, group=Classification, linetype=Classification),size=1, e.NCVDeath) + 
+  xlab("\n Time since index presentation (years)") +
+  ylab("Cumulative incidence of event\n") + 
+  coord_cartesian(ylim = c(0,0.3)) + 
+  scale_x_continuous(expand=c(0,0),limits=c(0,730.5),breaks=c(0, 365.25, 730.5),labels=c(0, 1, 2)) + 
+  scale_y_continuous(expand=c(0,0),labels = scales::percent, breaks=c(0,0.1,0.2,0.3)) +
+  scale_color_manual(name="Groups",labels=c("CCL Activation", "CCL Nonactivation"),values=c("#00BA38", "#F8766D")) + scale_linetype_manual(name="Groups",values=c(1,1),labels=c("CCL Activation", "CCL Nonactivation")) +
+  theme_pubr() +
+  labs(tag = "B") +
+  labs(title = "Noncardiovascular Death")
+
+e.NCVDeath.plot <- e.NCVDeath.plot + theme(legend.title = element_blank(), legend.text = element_text(size = 12, color = "black", face = "bold"), plot.title = element_text(hjust = 0.5, size = 12, color = "black", face = "bold"), plot.tag = element_text(size=12, face = "bold", color = "black"), axis.text.x = element_text(size=12, hjust = 0.5, vjust = 0.8, face = "bold", colour = "black"), axis.text.y = element_text(size = 12, hjust = 0.5, vjust = 0.8, face = "bold", colour = "black"), axis.title.x = element_text(size = 12, face = "bold"), axis.title.y = element_text(size = 12, face = "bold"), plot.margin=unit(c(0.5,0.5,0.5,0.5),"cm")) + ggplot2::annotate("text", parse=TRUE, size = 5, x = 630, y = 0.05, label = paste('P<0.001^"*"'))
+
+CumInc.FG <- ggarrange(e.MACE.plot, e.NCVDeath.plot, ncol=2, nrow=1, common.legend = TRUE, legend="top")
+
+# Print the results of Gray's test
+#e[["Tests"]]
+
+# Save TIFF
+tiff("figures/transmission2-fig4.tiff", units="in", width=10, height=6, res=300)
+CumInc.FG
+dev.off()
+
+CumInc.FG
+```
